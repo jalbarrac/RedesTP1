@@ -1,17 +1,17 @@
 import argparse
 from enum import IntEnum
 from socket import *
+import sys
 import os
 
 class MessageCodes(IntEnum):
 	REQUEST_UPLOAD = 1
-	ACCEPT_UPLOAD = 2
-	REJECT_UPLOAD = 3
+	ACCEPT_REQUEST = 2
+	REJECT_REQUEST = 3
 	DATA_SEND = 4
 	DATA_ACK = 5
 	REQUEST_DOWNLOAD = 6
-	REJECT_DOWNLOAD = 7
-	DATA_DONE = 8
+	DATA_DONE = 7
 
 parser = argparse.ArgumentParser(prog="upload", description="Upload a file.")
 group = parser.add_mutually_exclusive_group()
@@ -25,13 +25,15 @@ parser.add_argument("-r", "--protocol", help="error recovery protocol")
 
 args = parser.parse_args()
 
-#TO DO: Validar que el archivo exista.
-
 if not args.src:
     if "./" not in args.name:
         args.src = "./"
     else:
         args.src = ""
+
+#si el archivo no existe, salgo
+if not os.path.exists(args.src+args.name):
+    sys.exit("Error: Path not found.")
 
 client_socket = socket(AF_INET, SOCK_DGRAM)
 
@@ -43,21 +45,23 @@ client_socket.sendto(message, (args.host, args.port))
 
 response, server_address = client_socket.recvfrom(1024)
 
-if response[0] == MessageCodes.REJECT_UPLOAD:
+if response[0] == MessageCodes.REJECT_REQUEST:
     print(response[1:].decode())
 
 #TO DO: Generalizar a ambos protocolos
-elif response[0] == MessageCodes.ACCEPT_UPLOAD:
+elif response[0] == MessageCodes.ACCEPT_REQUEST:
     f = open(args.src+args.name, 'br')
     data = f.read(1019)
     seqnum = 0
     while data:
         message = bytes([MessageCodes.DATA_SEND]) + seqnum.to_bytes(4,'big') + data
         client_socket.sendto(message, (args.host, args.port))
-        response, server_address = client_socket.recvfrom(1024)
-        
+        client_socket.settimeout(0.3)
+        try:
+            response, server_address = client_socket.recvfrom(1024)
+        except socket.timeout:
+            continue
         #si recibo ACK, avanzo
-        #TO DO: Timeout
         if response[0] == MessageCodes.DATA_ACK and int.from_bytes(response[1:], 'big') == seqnum:
             data = f.read(1019)
             seqnum = seqnum + 1
