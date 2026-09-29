@@ -13,6 +13,10 @@ class MessageCodes(IntEnum):
 	REQUEST_DOWNLOAD = 6
 	DATA_DONE = 7
 
+class ProtocolCodes(IntEnum):
+    STOP_AND_WAIT = 1
+    SACK = 2
+
 parser = argparse.ArgumentParser(prog="upload", description="Upload a file.")
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
@@ -32,15 +36,16 @@ if not args.src:
         args.src = ""
 
 #si el archivo no existe, salgo
-if not os.path.exists(args.src+args.name):
+file_path = args.src + args.name
+if not os.path.exists(file_path):
     sys.exit("Error: Path not found.")
 
 client_socket = socket(AF_INET, SOCK_DGRAM)
 
-file_size_bytes = os.path.getsize(args.src+args.name).to_bytes(4,'big')
+file_size_bytes = os.path.getsize(file_path).to_bytes(4,'big')
 
 #solicitar inicio de upload
-message = bytes([MessageCodes.REQUEST_UPLOAD,1]) + file_size_bytes + args.name.encode()
+message = bytes([MessageCodes.REQUEST_UPLOAD, ProtocolCodes.STOP_AND_WAIT]) + file_size_bytes + args.name.encode()
 client_socket.sendto(message, (args.host, args.port))
 
 response, server_address = client_socket.recvfrom(1024)
@@ -50,7 +55,7 @@ if response[0] == MessageCodes.REJECT_REQUEST:
 
 #TO DO: Generalizar a ambos protocolos
 elif response[0] == MessageCodes.ACCEPT_REQUEST:
-    f = open(args.src+args.name, 'br')
+    f = open(file_path, 'br')
     data = f.read(1019)
     seqnum = 0
     while data:

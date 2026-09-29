@@ -13,6 +13,10 @@ class MessageCodes(IntEnum):
 	REQUEST_DOWNLOAD = 6
 	DATA_DONE = 7
 
+class ProtocolCodes(IntEnum):
+    STOP_AND_WAIT = 1
+    SACK = 2
+
 parser = argparse.ArgumentParser(prog="download", description="Download a file.")
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
@@ -31,7 +35,7 @@ if not args.dst:
 client_socket = socket(AF_INET, SOCK_DGRAM)
 
 #solicitar inicio de download
-message = bytes([MessageCodes.REQUEST_DOWNLOAD,1]) + args.name.encode()
+message = bytes([MessageCodes.REQUEST_DOWNLOAD, ProtocolCodes.STOP_AND_WAIT]) + args.name.encode()
 client_socket.sendto(message, (args.host, args.port))
 
 response, server_address = client_socket.recvfrom(1024)
