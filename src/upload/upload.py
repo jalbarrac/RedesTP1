@@ -3,9 +3,10 @@ from enum import IntEnum
 import socket
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from lib.sack import enviar_archivo_sack, recibir_archivo_sack
+from lib.sack import enviar_archivo_sack
 
 MAX_REINTENTOS = 5
 TIMEOUT_SEGUNDOS = 1.0
@@ -86,11 +87,11 @@ elif response[0] == MessageCodes.ACCEPT_REQUEST:
     # SELECCIÓN DE PROTOCOLO
     if proto_code == ProtocolCodes.SACK:
         # Transferencia usando SACK
-        enviar_archivo_sack(client_socket, (args.host, args.port), f)
-        # Notificar fin de envío
-        msg_done = bytes([MessageCodes.DATA_DONE])
-        enviar_y_esperar(msg_done, (args.host, args.port), (MessageCodes.DATA_DONE,))
-        print("Archivo enviado correctamente con SACK.")
+        ok = enviar_archivo_sack(client_socket, (args.host, args.port), f)
+        if ok:
+            print("Archivo enviado correctamente con SACK.")
+        else:
+            print("Error: no se pudo completar el envío con SACK.")
     else:
         # Transferencia usando Stop & Wait
         data = f.read(1019)
