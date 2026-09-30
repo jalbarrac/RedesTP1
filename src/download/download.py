@@ -21,10 +21,10 @@ parser = argparse.ArgumentParser(prog="download", description="Download a file."
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
 group.add_argument("-q", "--quiet", help="decrease output verbosity", action="store_true")
-parser.add_argument("-H", "--host", help="server IP address")
-parser.add_argument("-p", "--port", help="server port", type=int)
+parser.add_argument("-H", "--host", help="server IP address", required=True)
+parser.add_argument("-p", "--port", help="server port", type=int, required=True)
 parser.add_argument("-d", "--dst", help="destination file path")
-parser.add_argument("-n", "--name", help="file name")
+parser.add_argument("-n", "--name", help="file name", required=True)
 parser.add_argument("-r", "--protocol", help="error recovery protocol")
 
 args = parser.parse_args()
@@ -33,6 +33,9 @@ if not args.dst:
 	args.dst = "./"
 
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+MAX_REINTENTOS = 5
+TIMEOUT_SEGUNDOS = 1.0
 
 def stop_and_wait(mensaje, direccion, codigos_de_respuesta_validos):	
 	for intento in range(MAX_REINTENTOS):

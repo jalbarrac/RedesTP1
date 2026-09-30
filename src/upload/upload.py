@@ -4,6 +4,8 @@ import socket
 import sys
 import os
 
+MAX_REINTENTOS = 5
+TIMEOUT_SEGUNDOS = 1.0
 
 class MessageCodes(IntEnum):
     REQUEST_UPLOAD = 1
@@ -15,10 +17,7 @@ class MessageCodes(IntEnum):
     DATA_DONE = 7
 
 
-# Tiempo de espera (en segundos) antes de retransmitir un mensaje.
-TIMEOUT_SEGUNDOS = 0.3
-# Cantidad maxima de reintentos antes de abandonar la transferencia.
-MAX_REINTENTOS = 10
+
 
 class ProtocolCodes(IntEnum):
     STOP_AND_WAIT = 1
