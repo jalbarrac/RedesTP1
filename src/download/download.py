@@ -13,13 +13,10 @@ class MessageCodes(IntEnum):
 	REQUEST_DOWNLOAD = 6
 	DATA_DONE = 7
 
+class ProtocolCodes(IntEnum):
+    STOP_AND_WAIT = 1
+    SACK = 2
 
-# Tiempo de espera (segundos) antes de retransmitir un mensaje.
-TIMEOUT_SEGUNDOS = 0.3
-
-#Cantidad máxima de reintentos antes de abandonar la transferencia-
-MAX_REINTENTOS = 10
-	
 parser = argparse.ArgumentParser(prog="download", description="Download a file.")
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
@@ -51,10 +48,12 @@ def stop_and_wait(mensaje, direccion, codigos_de_respuesta_validos):
 
 
 #solicitar inicio de download
+
 message = bytes([MessageCodes.REQUEST_DOWNLOAD, 1]) + args.name.encode()
 response = stop_and_wait(
     message, (args.host, args.port), (MessageCodes.ACCEPT_REQUEST, MessageCodes.REJECT_REQUEST)
 )
+
 
 if response is None:
 	sys.exit("Error: el servidor no respondió a la solicitud de download.")

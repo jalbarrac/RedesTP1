@@ -20,6 +20,10 @@ TIMEOUT_SEGUNDOS = 0.3
 # Cantidad maxima de reintentos antes de abandonar la transferencia.
 MAX_REINTENTOS = 10
 
+class ProtocolCodes(IntEnum):
+    STOP_AND_WAIT = 1
+    SACK = 2
+
 parser = argparse.ArgumentParser(prog="upload", description="Upload a file.")
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
@@ -46,6 +50,7 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 file_size_bytes = os.path.getsize(args.src + args.name).to_bytes(4, 'big')
 
 
+
 def enviar_y_esperar(mensaje, direccion, codigos_de_respuesta_validos):
     """
     Manda 'mensaje' a 'direccion' y espera una respuesta cuyo primer byte
@@ -62,7 +67,6 @@ def enviar_y_esperar(mensaje, direccion, codigos_de_respuesta_validos):
         if respuesta[0] in codigos_de_respuesta_validos:
             return respuesta
     return None
-
 
 
 message = bytes([MessageCodes.REQUEST_UPLOAD, 1]) + file_size_bytes + args.name.encode()
