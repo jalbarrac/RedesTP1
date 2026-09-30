@@ -1,17 +1,24 @@
 import argparse
 from enum import IntEnum
-from socket import *
+import socket
 import sys
 import os
 
+
 class MessageCodes(IntEnum):
-	REQUEST_UPLOAD = 1
-	ACCEPT_REQUEST = 2
-	REJECT_REQUEST = 3
-	DATA_SEND = 4
-	DATA_ACK = 5
-	REQUEST_DOWNLOAD = 6
-	DATA_DONE = 7
+    REQUEST_UPLOAD = 1
+    ACCEPT_REQUEST = 2
+    REJECT_REQUEST = 3
+    DATA_SEND = 4
+    DATA_ACK = 5
+    REQUEST_DOWNLOAD = 6
+    DATA_DONE = 7
+
+
+# Tiempo de espera (en segundos) antes de retransmitir un mensaje.
+TIMEOUT_SEGUNDOS = 0.3
+# Cantidad maxima de reintentos antes de abandonar la transferencia.
+MAX_REINTENTOS = 10
 
 class ProtocolCodes(IntEnum):
     STOP_AND_WAIT = 1
@@ -35,43 +42,58 @@ if not args.src:
     else:
         args.src = ""
 
-#si el archivo no existe, salgo
-file_path = args.src + args.name
-if not os.path.exists(file_path):
+if not os.path.exists(args.src + args.name):
     sys.exit("Error: Path not found.")
 
-client_socket = socket(AF_INET, SOCK_DGRAM)
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-file_size_bytes = os.path.getsize(file_path).to_bytes(4,'big')
+file_size_bytes = os.path.getsize(args.src + args.name).to_bytes(4, 'big')
 
-#solicitar inicio de upload
-message = bytes([MessageCodes.REQUEST_UPLOAD, ProtocolCodes.STOP_AND_WAIT]) + file_size_bytes + args.name.encode()
-client_socket.sendto(message, (args.host, args.port))
 
-response, server_address = client_socket.recvfrom(1024)
 
+def enviar_y_esperar(mensaje, direccion, codigos_de_respuesta_validos):
+    """
+    Manda 'mensaje' a 'direccion' y espera una respuesta cuyo primer byte
+    este en 'codigos_de_respuesta_validos'. Si no llega a tiempo,
+    retransmite el mismo mensaje (Stop & Wait), hasta MAX_REINTENTOS veces.
+    """
+    for _intento in range(MAX_REINTENTOS):
+        client_socket.sendto(mensaje, direccion)
+        client_socket.settimeout(TIMEOUT_SEGUNDOS)
+        try:
+            respuesta, _direccion_origen = client_socket.recvfrom(1024)
+        except socket.timeout:
+            continue
+        if respuesta[0] in codigos_de_respuesta_validos:
+            return respuesta
+    return None
+
+
+message = bytes([MessageCodes.REQUEST_UPLOAD, 1]) + file_size_bytes + args.name.encode()
+response = enviar_y_esperar(
+    message, (args.host, args.port), (MessageCodes.ACCEPT_REQUEST, MessageCodes.REJECT_REQUEST)
+)
+if response is None:
+    sys.exit("Error: el servidor no respondio a la solicitud de upload.")
 if response[0] == MessageCodes.REJECT_REQUEST:
     print(response[1:].decode())
-
-#TO DO: Generalizar a ambos protocolos
 elif response[0] == MessageCodes.ACCEPT_REQUEST:
-    f = open(file_path, 'br')
+    f = open(args.src + args.name, 'rb')
     data = f.read(1019)
     seqnum = 0
     while data:
-        message = bytes([MessageCodes.DATA_SEND]) + seqnum.to_bytes(4,'big') + data
-        client_socket.sendto(message, (args.host, args.port))
-        client_socket.settimeout(0.3)
-        try:
-            response, server_address = client_socket.recvfrom(1024)
-        except socket.timeout:
-            continue
-        #si recibo ACK, avanzo
-        if response[0] == MessageCodes.DATA_ACK and int.from_bytes(response[1:], 'big') == seqnum:
+        message = bytes([MessageCodes.DATA_SEND]) + seqnum.to_bytes(4, 'big') + data
+        respuesta_ack = enviar_y_esperar(message, (args.host, args.port), (MessageCodes.DATA_ACK,))
+        if respuesta_ack is None:
+            sys.exit(f"Error: se agotaron los reintentos enviando el fragmento {seqnum}.")
+        if int.from_bytes(respuesta_ack[1:], 'big') == seqnum:
             data = f.read(1019)
             seqnum = seqnum + 1
-
-    message = bytes([MessageCodes.DATA_DONE])
-    client_socket.sendto(message, (args.host, args.port))
     f.close()
+    message = bytes([MessageCodes.DATA_DONE])
+    confirmacion = enviar_y_esperar(message, (args.host, args.port), (MessageCodes.DATA_DONE,))
+    if confirmacion is None:
+        print("Advertencia: no se pudo confirmar el fin de la transferencia con el servidor.")
+    else:
+        print("Archivo enviado correctamente.")
 client_socket.close()
