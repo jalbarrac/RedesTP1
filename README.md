@@ -10,7 +10,7 @@
 
 # Ejecución de Mininet
 
-/RedesTP1/src$ python2 topology.py 
+/RedesTP1/src$ python3 topology.py 
 
 > Nota: si ven necesario, agregar sudo
 
