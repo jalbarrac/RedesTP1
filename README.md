@@ -1,32 +1,74 @@
-# Ejecutar
+# Redes TP1
 
-/RedesTP1/src/start-server$ python3 server.py -p 54321
+Trabajo Práctico 1 de Redes. Implementación de transferencia de archivos mediante UDP.
 
-/RedesTP1/src/upload$ python3 upload.py -H 127.0.0.1 -p 54321 -n nombre_archivo
+## Requisitos
 
-/RedesTP1/src/download$ python3 download.py -H 127.0.0.1 -p 54321 -n nombre_archivo
+- Python 3
+- Mininet
+- XTerm
 
----
+## Ejecución local
 
-# Ejecución de Mininet
+### Servidor
 
-/RedesTP1/src$ python3 topology.py 
+```bash
+cd src/start-server
+python3 server.py -p 54321
+```
 
-> Nota: si ven necesario, agregar sudo
+### Upload
 
-Se abre la consola de mininet, mostrando la información de la topología
+```bash
+cd src/upload
+python3 upload.py -H 127.0.0.1 -p 54321 -n nombre_archivo
+```
 
-Si usan XTERM, se pueden tener dos terminales abiertas en simultaneo para ejecutar en uno el servidor y en el otro el cliente
+### Download
 
-Comando: xterm h1 h2
+```bash
+cd src/download
+python3 download.py -H 127.0.0.1 -p 54321 -n nombre_archivo
+```
 
-## Ejemplo:
+## Ejecución con Mininet
 
-h1 (cliente): /RedesTP1/src/upload$ python3 upload.py -H 10.0.0.1 -p 54321 -n nombre_archivo
+Iniciar la topología:
 
-h2 (server):  /RedesTP1/src/start-server$ python3 server.py -p 54321 
+```bash
+cd src
+python3 topology.py
+```
 
----
+Luego, en la consola de Mininet:
+
+```text
+xterm h1 h2
+```
+
+### h2 — Servidor
+
+```bash
+cd src/start-server
+python3 server.py -p 54321
+```
+
+### h1 — Cliente
+
+**Upload:**
+
+```bash
+cd src/upload
+python3 upload.py -H 10.0.0.1 -p 54321 -n nombre_archivo
+```
+
+**Download:**
+
+```bash
+cd src/download
+python3 download.py -H 10.0.0.1 -p 54321 -n nombre_archivo
+```
+
 
 # Cuestionario
 
