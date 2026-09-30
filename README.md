@@ -22,7 +22,7 @@ Comando: xterm h1 h2
 
 ## Ejemplo:
 
-h1 (cliente): /RedesTP1/src/upload$ python3 upload.py -H 10.0.0.2 -p 54321 -n nombre_archivo
+h1 (cliente): /RedesTP1/src/upload$ python3 upload.py -H 10.0.0.1-p 54321 -n nombre_archivo
 
 h2 (server):  /RedesTP1/src/start-server$ python3 server.py -p 54321 
 
