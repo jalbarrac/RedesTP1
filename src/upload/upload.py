@@ -1,15 +1,9 @@
 import argparse
-from enum import IntEnum
+import os
 import socket
 import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from lib.sack import enviar_archivo_sack
-
-MAX_REINTENTOS = 5
-TIMEOUT_SEGUNDOS = 1.0
+import time
+from enum import IntEnum
 
 class MessageCodes(IntEnum):
     REQUEST_UPLOAD = 1
@@ -24,95 +18,175 @@ class ProtocolCodes(IntEnum):
     STOP_AND_WAIT = 1
     SACK = 2
 
+# Parámetros para SACK y Stop & Wait
+WINDOW_SIZE = 64
+TIMEOUT_SEC = 0.35
+MAX_PAYLOAD = 1019
+MAX_TIMEOUTS = 20
+MAX_SACK_BLOCKS = 4
+
 parser = argparse.ArgumentParser(prog="upload", description="Upload a file.")
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
 group.add_argument("-q", "--quiet", help="decrease output verbosity", action="store_true")
-parser.add_argument("-H", "--host", help="server IP address")
-parser.add_argument("-p", "--port", help="server port", type=int)
-parser.add_argument("-s", "--src", help="source file path")
-parser.add_argument("-n", "--name", help="file name")
-parser.add_argument("-r", "--protocol", help="error recovery protocol")
+parser.add_argument("-H", "--host", required=True, help="server IP address")
+parser.add_argument("-p", "--port", type=int, default=54321, help="server port")
+parser.add_argument("-s", "--src", default="./", help="source file path")
+parser.add_argument("-n", "--name", required=True, help="file name")
+parser.add_argument("-r", "--protocol", default="saw", help="error recovery protocol (saw o sack)")
 
 args = parser.parse_args()
 
-if not args.src:
-    if "./" not in args.name:
-        args.src = "./"
-    else:
-        args.src = ""
-
 file_path = os.path.join(args.src, args.name)
-if not os.path.exists(file_path):
-    sys.exit("Error: Path not found.")
+if not os.path.isfile(file_path):
+    sys.exit(f"Error: No existe el archivo '{file_path}'.")
 
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-file_size_bytes = os.path.getsize(file_path).to_bytes(4, 'big')
+dest_addr = (args.host, args.port)
+file_size = os.path.getsize(file_path)
+file_size_bytes = file_size.to_bytes(4, 'big')
 
-def enviar_y_esperar(mensaje, direccion, codigos_de_respuesta_validos):
-    """
-    Manda 'mensaje' a 'direccion' y espera una respuesta cuyo primer byte
-    este en 'codigos_de_respuesta_validos'. Si no llega a tiempo,
-    retransmite el mismo mensaje (Stop & Wait), hasta MAX_REINTENTOS veces.
-    """
-    for _intento in range(MAX_REINTENTOS):
-        client_socket.sendto(mensaje, direccion)
-        client_socket.settimeout(TIMEOUT_SEGUNDOS)
+def enviar_y_esperar(mensaje, codigos_validos, max_intentos=15, timeout=1.0):
+    for _ in range(max_intentos):
+        client_socket.sendto(mensaje, dest_addr)
+        client_socket.settimeout(timeout)
         try:
-            respuesta, _direccion_origen = client_socket.recvfrom(1024)
+            respuesta, _ = client_socket.recvfrom(1024)
+            if respuesta and respuesta[0] in codigos_validos:
+                return respuesta
         except socket.timeout:
             continue
-        if respuesta[0] in codigos_de_respuesta_validos:
-            return respuesta
     return None
 
-# Determinar el protocolo elegido
-proto_code = ProtocolCodes.SACK if args.protocol and args.protocol.lower() == 'sack' else ProtocolCodes.STOP_AND_WAIT
+def enviar_sack(file_obj):
+    chunks = []
+    while True:
+        chunk = file_obj.read(MAX_PAYLOAD)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    total_chunks = len(chunks)
+    base = 0
+    next_seqnum = 0
+    acks_recibidos = set()
+    timer_start = None
+    timeouts_seguidos = 0
 
-# Solicitud inicial (Handshake)
-message = bytes([MessageCodes.REQUEST_UPLOAD, proto_code]) + file_size_bytes + args.name.encode()
-response = enviar_y_esperar(
-    message, (args.host, args.port), (MessageCodes.ACCEPT_REQUEST, MessageCodes.REJECT_REQUEST)
-)
+    def armar_pkt(seq):
+        return bytes([MessageCodes.DATA_SEND]) + seq.to_bytes(4, 'big') + chunks[seq]
 
-if response is None:
-    sys.exit("Error: el servidor no respondio a la solicitud de upload.")
+    def recibir_ack():
+        try:
+            client_socket.settimeout(0.005)
+            data, _ = client_socket.recvfrom(1024)
+            return data
+        except (socket.timeout, ConnectionResetError):
+            return None
 
-if response[0] == MessageCodes.REJECT_REQUEST:
-    print(response[1:].decode())
+    while base < total_chunks:
+        while next_seqnum < base + WINDOW_SIZE and next_seqnum < total_chunks:
+            if next_seqnum not in acks_recibidos:
+                client_socket.sendto(armar_pkt(next_seqnum), dest_addr)
+            next_seqnum += 1
+        if timer_start is None and base < next_seqnum:
+            timer_start = time.time()
 
-elif response[0] == MessageCodes.ACCEPT_REQUEST:
-    f = open(file_path, 'rb')
-    
-    # SELECCIÓN DE PROTOCOLO
+        hubo_ack = False
+        while True:
+            ack_pkt = recibir_ack()
+            if ack_pkt is None:
+                break
+            if len(ack_pkt) < 6 or ack_pkt[0] != MessageCodes.DATA_ACK:
+                continue
+            cum_ack = int.from_bytes(ack_pkt[1:5], 'big')
+            num_blocks = ack_pkt[5]
+            for i in range(base, min(cum_ack, total_chunks)):
+                acks_recibidos.add(i)
+            offset = 6
+            for _ in range(num_blocks):
+                if offset + 8 > len(ack_pkt):
+                    break
+                left = int.from_bytes(ack_pkt[offset:offset + 4], 'big')
+                right = int.from_bytes(ack_pkt[offset + 4:offset + 8], 'big')
+                for seq in range(left, min(right, total_chunks)):
+                    acks_recibidos.add(seq)
+                offset += 8
+            hubo_ack = True
+
+        base_anterior = base
+        while base in acks_recibidos:
+            base += 1
+        if base != base_anterior:
+            timeouts_seguidos = 0
+            timer_start = time.time() if base < next_seqnum else None
+        elif hubo_ack and timer_start is not None:
+            timer_start = time.time()
+        if timer_start is not None and (time.time() - timer_start > TIMEOUT_SEC):
+            timeouts_seguidos += 1
+            if timeouts_seguidos >= MAX_TIMEOUTS:
+                return False
+            for seq in range(base, min(base + WINDOW_SIZE, total_chunks)):
+                if seq not in acks_recibidos:
+                    client_socket.sendto(armar_pkt(seq), dest_addr)
+            timer_start = time.time()
+
+    done_pkt = bytes([MessageCodes.DATA_DONE])
+    for _ in range(15):
+        client_socket.sendto(done_pkt, dest_addr)
+        deadline = time.time() + 0.3
+        while time.time() < deadline:
+            restante = max(0.01, deadline - time.time())
+            try:
+                client_socket.settimeout(restante)
+                res, _ = client_socket.recvfrom(1024)
+                if res and res[0] == MessageCodes.DATA_DONE:
+                    return True
+            except (socket.timeout, ConnectionResetError):
+                break
+    return False
+
+def enviar_stop_and_wait(file_obj):
+    seqnum = 0
+    data = file_obj.read(MAX_PAYLOAD)
+    while data:
+        pkt = bytes([MessageCodes.DATA_SEND]) + seqnum.to_bytes(4, 'big') + data
+        ack = None
+        for _ in range(15):
+            client_socket.sendto(pkt, dest_addr)
+            client_socket.settimeout(1.0)
+            try:
+                res, _ = client_socket.recvfrom(1024)
+                if res and res[0] == MessageCodes.DATA_ACK and int.from_bytes(res[1:5], 'big') == seqnum:
+                    ack = res
+                    break
+            except socket.timeout:
+                continue
+        if ack is None:
+            return False
+        data = file_obj.read(MAX_PAYLOAD)
+        seqnum += 1
+    done = bytes([MessageCodes.DATA_DONE])
+    enviar_y_esperar(done, (MessageCodes.DATA_DONE,))
+    return True
+
+# Handshake
+proto_code = ProtocolCodes.SACK if args.protocol.lower() == 'sack' else ProtocolCodes.STOP_AND_WAIT
+req = bytes([MessageCodes.REQUEST_UPLOAD, proto_code]) + file_size_bytes + args.name.encode()
+resp = enviar_y_esperar(req, (MessageCodes.ACCEPT_REQUEST, MessageCodes.REJECT_REQUEST))
+
+if resp is None:
+    sys.exit("Error: El servidor no respondió a la solicitud.")
+if resp[0] == MessageCodes.REJECT_REQUEST:
+    sys.exit(f"Rechazado por el servidor: {resp[1:].decode(errors='replace')}")
+
+with open(file_path, 'rb') as f:
     if proto_code == ProtocolCodes.SACK:
-        # Transferencia usando SACK
-        ok = enviar_archivo_sack(client_socket, (args.host, args.port), f)
-        if ok:
-            print("Archivo enviado correctamente con SACK.")
-        else:
-            print("Error: no se pudo completar el envío con SACK.")
+        ok = enviar_sack(f)
     else:
-        # Transferencia usando Stop & Wait
-        data = f.read(1019)
-        seqnum = 0
-        while data:
-            message = bytes([MessageCodes.DATA_SEND]) + seqnum.to_bytes(4, 'big') + data
-            respuesta_ack = enviar_y_esperar(message, (args.host, args.port), (MessageCodes.DATA_ACK,))
-            if respuesta_ack is None:
-                f.close()
-                sys.exit(f"Error: se agotaron los reintentos enviando el fragmento {seqnum}.")
-            if int.from_bytes(respuesta_ack[1:], 'big') == seqnum:
-                data = f.read(1019)
-                seqnum += 1
-        
-        message = bytes([MessageCodes.DATA_DONE])
-        confirmacion = enviar_y_esperar(message, (args.host, args.port), (MessageCodes.DATA_DONE,))
-        if confirmacion is None:
-            print("Advertencia: no se pudo confirmar el fin de la transferencia con el servidor.")
-        else:
-            print("Archivo enviado correctamente con Stop & Wait.")
-            
-    f.close()
-
+        ok = enviar_stop_and_wait(f)
+if not args.quiet:
+    if ok:
+        print("OK: Transferencia de subida finalizada con éxito.")
+    else:
+        print("Error: Falló la transferencia.")
 client_socket.close()
