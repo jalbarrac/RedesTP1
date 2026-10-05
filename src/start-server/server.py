@@ -2,10 +2,11 @@ import argparse
 import os
 import queue
 import socket
-import sys
 import threading
 import time
+from datetime import datetime
 from enum import IntEnum
+
 
 class MessageCodes(IntEnum):
     REQUEST_UPLOAD = 1
@@ -16,23 +17,43 @@ class MessageCodes(IntEnum):
     REQUEST_DOWNLOAD = 6
     DATA_DONE = 7
 
+
 class ProtocolCodes(IntEnum):
     STOP_AND_WAIT = 1
     SACK = 2
+
 
 WINDOW_SIZE = 64
 TIMEOUT_SEC = 0.35
 MAX_PAYLOAD = 1019
 MAX_TIMEOUTS = 20
-MAX_SACK_BLOCKS = 4
+MAX_SACK_BLOCKS = 32
 
-parser = argparse.ArgumentParser(prog="start-server", description="Start storage server.")
+parser = argparse.ArgumentParser(
+    prog="start-server",
+    description="Start storage server.")
 group = parser.add_mutually_exclusive_group()
-group.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
-group.add_argument("-q", "--quiet", help="decrease output verbosity", action="store_true")
-parser.add_argument("-H", "--host", default="0.0.0.0", help="service IP address")
-parser.add_argument("-p", "--port", default=54321, type=int, help="service port")
-parser.add_argument("-s", "--storage", default="./storage", help="storage dir path")
+group.add_argument(
+    "-v", "--verbose",
+    help="increase output verbosity",
+    action="store_true")
+group.add_argument(
+    "-q", "--quiet",
+    help="decrease output verbosity",
+    action="store_true")
+parser.add_argument(
+    "-H", "--host",
+    default="0.0.0.0",
+    help="service IP address")
+parser.add_argument(
+    "-p", "--port",
+    default=54321,
+    type=int,
+    help="service port")
+parser.add_argument(
+    "-s", "--storage",
+    default="./storage",
+    help="storage dir path")
 
 args = parser.parse_args()
 storage_dir = args.storage
@@ -42,10 +63,12 @@ server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_socket.bind((args.host, args.port))
 
 if not args.quiet:
-    print(f"Servidor escuchando en {args.host}:{args.port}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+          f"Servidor escuchando en {args.host}:{args.port}")
 
 sesiones_activas = {}
 lock_sesiones = threading.Lock()
+
 
 def srv_enviar_sack(file_obj, client_address, cola):
     chunks = []
@@ -62,7 +85,8 @@ def srv_enviar_sack(file_obj, client_address, cola):
     timeouts_seguidos = 0
 
     def armar_pkt(seq):
-        return bytes([MessageCodes.DATA_SEND]) + seq.to_bytes(4, 'big') + chunks[seq]
+        return (bytes([MessageCodes.DATA_SEND])
+                + seq.to_bytes(4, 'big') + chunks[seq])
     while base < total_chunks:
         while next_seqnum < base + WINDOW_SIZE and next_seqnum < total_chunks:
             if next_seqnum not in acks_recibidos:
@@ -107,7 +131,8 @@ def srv_enviar_sack(file_obj, client_address, cola):
         elif hubo_ack and timer_start is not None:
             timer_start = time.time()
 
-        if timer_start is not None and (time.time() - timer_start > TIMEOUT_SEC):
+        if (timer_start is not None
+                and (time.time() - timer_start > TIMEOUT_SEC)):
             timeouts_seguidos += 1
             if timeouts_seguidos >= MAX_TIMEOUTS:
                 return False
@@ -126,6 +151,7 @@ def srv_enviar_sack(file_obj, client_address, cola):
             continue
     return False
 
+
 def srv_recibir_sack(file_obj, client_address, cola):
     received_chunks = {}
     cum_ack = 0
@@ -142,7 +168,9 @@ def srv_recibir_sack(file_obj, client_address, cola):
         codigo = pkt[0]
         if codigo == MessageCodes.DATA_DONE:
             for _ in range(3):
-                server_socket.sendto(bytes([MessageCodes.DATA_DONE]), client_address)
+                server_socket.sendto(
+                    bytes([MessageCodes.DATA_DONE]),
+                    client_address)
             break
         if codigo == MessageCodes.DATA_SEND:
             if len(pkt) < 5:
@@ -154,8 +182,9 @@ def srv_recibir_sack(file_obj, client_address, cola):
 
             while cum_ack in received_chunks:
                 cum_ack += 1
-            out_of_order = [s for s in range(cum_ack + 1, cum_ack + WINDOW_SIZE + 1)
-                            if s in received_chunks]
+            out_of_order = [
+                s for s in range(cum_ack + 1, cum_ack + WINDOW_SIZE + 1)
+                if s in received_chunks]
             blocks = []
             if out_of_order:
                 start = out_of_order[0]
@@ -184,19 +213,26 @@ def srv_recibir_sack(file_obj, client_address, cola):
         file_obj.write(received_chunks[seq])
     return True
 
+
 def atender_upload(mensaje_solicitud, client_address, cola):
     try:
         proto_code = mensaje_solicitud[1]
         file_size = int.from_bytes(mensaje_solicitud[2:6], 'big')
         filename = mensaje_solicitud[6:].decode(errors='replace')
         if not filename:
-            server_socket.sendto(bytes([MessageCodes.REJECT_REQUEST]) + b"Nombre invalido", client_address)
+            server_socket.sendto(
+                (bytes([MessageCodes.REJECT_REQUEST])
+                 + b"Nombre invalido"), client_address)
             return
         if file_size > 1073741824:
-            server_socket.sendto(bytes([MessageCodes.REJECT_REQUEST]) + b"Archivo demasiado grande", client_address)
+            server_socket.sendto(
+                (bytes([MessageCodes.REJECT_REQUEST])
+                 + b"Archivo demasiado grande"), client_address)
             return
         for _ in range(3):
-            server_socket.sendto(bytes([MessageCodes.ACCEPT_REQUEST]), client_address)
+            server_socket.sendto(
+                bytes([MessageCodes.ACCEPT_REQUEST]),
+                client_address)
         filepath = os.path.join(storage_dir, filename)
 
         with open(filepath, 'wb') as f:
@@ -214,17 +250,23 @@ def atender_upload(mensaje_solicitud, client_address, cola):
                         if seq == seq_esperado:
                             f.write(pkt[5:])
                             seq_esperado += 1
-                        server_socket.sendto(bytes([MessageCodes.DATA_ACK]) + seq.to_bytes(4, 'big'), client_address)
+                        server_socket.sendto(
+                            (bytes([MessageCodes.DATA_ACK])
+                             + seq.to_bytes(4, 'big')), client_address)
                     elif pkt[0] == MessageCodes.DATA_DONE:
                         for _ in range(3):
-                            server_socket.sendto(bytes([MessageCodes.DATA_DONE]), client_address)
+                            server_socket.sendto(
+                                bytes([MessageCodes.DATA_DONE]),
+                                client_address)
                         break
         if not args.quiet:
-            print(f"[UPLOAD OK] {filename} desde {client_address}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}][UPLOAD OK] "
+                  f"{filename} desde {client_address}")
     finally:
         with lock_sesiones:
             if sesiones_activas.get(client_address) is cola:
                 del sesiones_activas[client_address]
+
 
 def atender_download(mensaje_solicitud, client_address, cola):
     try:
@@ -233,11 +275,14 @@ def atender_download(mensaje_solicitud, client_address, cola):
         filepath = os.path.join(storage_dir, filename)
 
         if not os.path.isfile(filepath):
-            server_socket.sendto(bytes([MessageCodes.REJECT_REQUEST]) + b"Archivo no encontrado", client_address)
+            server_socket.sendto(
+                (bytes([MessageCodes.REJECT_REQUEST])
+                 + b"Archivo no encontrado"), client_address)
             return
 
         for _ in range(3):
-            server_socket.sendto(bytes([MessageCodes.ACCEPT_REQUEST]), client_address)
+            server_socket.sendto(bytes([MessageCodes.ACCEPT_REQUEST]),
+                                 client_address)
 
         with open(filepath, 'rb') as f:
             if proto_code == ProtocolCodes.SACK:
@@ -246,13 +291,16 @@ def atender_download(mensaje_solicitud, client_address, cola):
                 seqnum = 0
                 data = f.read(MAX_PAYLOAD)
                 while data:
-                    pkt = bytes([MessageCodes.DATA_SEND]) + seqnum.to_bytes(4, 'big') + data
+                    pkt = (bytes([MessageCodes.DATA_SEND])
+                           + seqnum.to_bytes(4, 'big') + data)
                     confirmado = False
                     for _ in range(15):
                         server_socket.sendto(pkt, client_address)
                         try:
                             res = cola.get(timeout=1.0)
-                            if res[0] == MessageCodes.DATA_ACK and int.from_bytes(res[1:5], 'big') == seqnum:
+                            ack_seq = int.from_bytes(res[1:5], 'big')
+                            if (res[0] == MessageCodes.DATA_ACK
+                                    and ack_seq == seqnum):
                                 confirmado = True
                                 break
                         except queue.Empty:
@@ -263,7 +311,9 @@ def atender_download(mensaje_solicitud, client_address, cola):
                     seqnum += 1
 
                 for _ in range(5):
-                    server_socket.sendto(bytes([MessageCodes.DATA_DONE]), client_address)
+                    server_socket.sendto(
+                        bytes([MessageCodes.DATA_DONE]),
+                        client_address)
                     try:
                         res = cola.get(timeout=0.3)
                         if res[0] == MessageCodes.DATA_DONE:
@@ -271,11 +321,13 @@ def atender_download(mensaje_solicitud, client_address, cola):
                     except queue.Empty:
                         pass
         if not args.quiet:
-            print(f"[DOWNLOAD OK] {filename} hacia {client_address}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}][DOWNLOAD OK] "
+                  f"{filename} hacia {client_address}")
     finally:
         with lock_sesiones:
             if sesiones_activas.get(client_address) is cola:
                 del sesiones_activas[client_address]
+
 
 while True:
     try:
@@ -288,13 +340,17 @@ while True:
             cola = queue.Queue()
             with lock_sesiones:
                 sesiones_activas[client_address] = cola
-            threading.Thread(target=atender_upload, args=(mensaje, client_address, cola), daemon=True).start()
+            threading.Thread(target=atender_upload,
+                             args=(mensaje, client_address, cola),
+                             daemon=True).start()
 
         elif codigo == MessageCodes.REQUEST_DOWNLOAD:
             cola = queue.Queue()
             with lock_sesiones:
                 sesiones_activas[client_address] = cola
-            threading.Thread(target=atender_download, args=(mensaje, client_address, cola), daemon=True).start()
+            threading.Thread(target=atender_download,
+                             args=(mensaje, client_address, cola),
+                             daemon=True).start()
 
         else:
             with lock_sesiones:
