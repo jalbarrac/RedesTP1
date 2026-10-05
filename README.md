@@ -26,11 +26,12 @@ mininet> dump
 
 ### Terminal 2: Servidor (Host `h5`)
 Abrí una terminal nueva, pasá a usuario root y entrá al espacio de red de `h5`:
+trabajar en la raiz del tp 
 
 ```bash
 sudo su
 mnexec -a <PID_H5> bash
-cd "/ruta/al/proyecto"
+cd "/RedesTP1"
 python3 src/start-server/server.py -s ./storage -v
 ```
 *El servidor quedará a la escucha en el puerto `54321`.*
