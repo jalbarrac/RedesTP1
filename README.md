@@ -50,7 +50,7 @@ cd "/ruta/al/proyecto"
 #### 1. Probar Upload (Subida)
 Genera un archivo de prueba y lo envía al servidor (`10.0.0.5`):
 ```bash
-dd if=/dev/urandom of=prueba.bin bs=1K count=100
+dd if=/dev/urandom of=prueba.bin bs=1 count=5000000
 python3 src/upload/upload.py -H 10.0.0.5 -p 54321 -s ./ -n prueba.bin -r sack -v
 ```
 
