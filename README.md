@@ -62,7 +62,7 @@ Genera un archivo de prueba y lo envía al servidor (`10.0.0.5`):
 dd if=/dev/urandom of=prueba.bin bs=1 count=5000000
 python3 src/upload/upload.py -H 10.0.0.5 -p 54321 -s ./ -n prueba.bin -r sack -v
 ```
-#### 1. Probar Archivo Grande (lanza error) SACK 
+#### 1.1 Probar Archivo Grande (lanza error) SACK 
 ```bash
 truncate -s 1100M grande.bin
 python3 src/upload/upload.py -H 10.0.0.5 -p 54321 -s ./ -n grande.bin -r sack -v
