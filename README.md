@@ -12,7 +12,7 @@ Para simular las condiciones de red exigidas (10% de pérdida por sentido y 40 m
 Inicia la topología con 5 hosts conectados a un switch:
 
 ```bash
-sudo mn --topo single,5 --link tc,loss=10,delay=20ms
+sudo mn --topo single,5 --link tc,loss=5,delay=20ms
 ```
 
 Una vez que aparezca el prompt `mininet>`, consultá los PIDs (identificadores de proceso) de los hosts virtuales:
