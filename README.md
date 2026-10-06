@@ -22,12 +22,12 @@ sudo mn --topo single,5 --link tc,loss=5,delay=75ms
 sudo mn --topo single,5 --link tc,loss=5,delay=10ms
 ```
 
-**Cambiar valores del entorno en tiempo real ( RTT= 300ms y perdida total= 10% ) 
+**Cambiar valores del entorno en tiempo real ( RTT= 300ms y perdida total= 10% )**
 ```bash
-mininet> h1 tc qdisc change dev h1-eth0 root netem delay 75ms loss 5%
-mininet> h5 tc qdisc change dev h5-eth0 root netem delay 75ms loss 5%
-mininet> s1 tc qdisc change dev s1-eth1 root netem delay 75ms loss 5%
-mininet> s1 tc qdisc change dev s1-eth5 root netem delay 75ms loss 5%
+  h1 tc qdisc change dev h1-eth0 root netem delay 75ms loss 5%
+  h5 tc qdisc change dev h5-eth0 root netem delay 75ms loss 5%
+  s1 tc qdisc change dev s1-eth1 root netem delay 75ms loss 5%
+  s1 tc qdisc change dev s1-eth5 root netem delay 75ms loss 5%
 ```
 
 
