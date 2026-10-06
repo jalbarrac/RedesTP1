@@ -22,7 +22,7 @@ sudo mn --topo single,5 --link tc,loss=5,delay=75ms
 sudo mn --topo single,5 --link tc,loss=5,delay=10ms
 ```
 
-```
+
 
 Una vez que aparezca el prompt `mininet>`, consultá los PIDs (identificadores de proceso) de los hosts virtuales:
 
