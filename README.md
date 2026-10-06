@@ -9,10 +9,19 @@ Implementación de un protocolo de capa de aplicación para transferencia confia
 Para simular las condiciones de red exigidas (10% de pérdida por sentido y 40 ms de RTT), se utilizan 3 terminales independientes.
 
 ### Terminal 1: Entorno de Red (Mininet)
-Inicia la topología con 5 hosts conectados a un switch , RTT = 40ms , y perdida de paquete por : 10% totales 
-
+ 
+Inicia la topología con 5 hosts conectados a un switch. Elegir **uno** de los dos entornos:
+ 
+**Entorno 1 (RTT = 300 ms, pérdida ≈ 10%):**
+```bash
+sudo mn --topo single,5 --link tc,loss=5,delay=75ms
+```
+ 
+**Entorno 2 (RTT = 40 ms, pérdida ≈ 10%):**
 ```bash
 sudo mn --topo single,5 --link tc,loss=5,delay=10ms
+```
+
 ```
 
 Una vez que aparezca el prompt `mininet>`, consultá los PIDs (identificadores de proceso) de los hosts virtuales:
