@@ -7,7 +7,7 @@ from pox.lib.packet.arp import arp
 from pox.lib.packet.udp import udp
 from pox.lib.packet.tcp import tcp
 import time
-
+from datetime import datetime
 
 log = core.getLogger()
 RED = "\033[31m"
@@ -18,7 +18,7 @@ RESET = "\033[0m"
 
 
 def log_color(color, msg):
-    log.info(f"{color}{msg}{RESET}")
+    log.info(f"{color}{datetime.now().strftime('%H:%M:%S')} {msg}{RESET}")
 
 
 PRIVATE_SUBNET = IPAddr("192.168.1.0")      # Red interna
@@ -103,7 +103,6 @@ class NatTable(object):
         """Borra la traducción y deja el puerto público disponible para reutilizarlo"""
         self.outgoing.pop(entry.key_out(), None)
         self.incoming.pop(entry.key_in(), None)
-        self.next_port_to_try = self.port_min
 
 class ProtoRouter(object):
     def __init__(self, connection):
@@ -141,12 +140,23 @@ class ProtoRouter(object):
         entry.active_flows -= 1
         log_color(YELLOW, f"[FLOW REMOVED] Flujo {direction} vencido para "
                           f"{entry.ip_priv}:{entry.port_priv} ↔ {PUBLIC_IP}:{entry.port_pub} "
-                          f"(flujos activos: {entry.active_flows})")
+                          f"(flujos activos: {entry.active_flows})"
+                          f"(Motivo: {event.ofp.reason})")
 
         if entry.active_flows <= 0:
+            if event.idleTimeout:
+                self.nat.release(entry)
+                log_color(RED, f"PAT LIBERADO: {entry.ip_priv}:{entry.port_priv} ↔ "
+                                f"{PUBLIC_IP}:{entry.port_pub} (puerto {entry.port_pub} disponible)")
+            elif event.hardTimeout:
+                core.callDelayed(FLOW_IDLE_TIMEOUT,self._check_flow, entry)
+
+    def _check_flow(self, entry):
+        if entry.active_flows <= 0 and (self.nat.get_in(entry.proto, entry.port_pub) is entry):
             self.nat.release(entry)
             log_color(RED, f"PAT LIBERADO: {entry.ip_priv}:{entry.port_priv} ↔ "
-                           f"{PUBLIC_IP}:{entry.port_pub} (puerto {entry.port_pub} disponible)")
+                            f"{PUBLIC_IP}:{entry.port_pub} (puerto {entry.port_pub} disponible)")
+
 
     def resolve_arp(self, target_ip, event):
         arp_entry = self.arp_table.get(target_ip)
